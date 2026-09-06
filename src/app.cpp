@@ -22,9 +22,9 @@ static const char *ButtonName(Uint8 button) {
         case SDL_CONTROLLER_BUTTON_B:              return "B";
         case SDL_CONTROLLER_BUTTON_X:              return "X";
         case SDL_CONTROLLER_BUTTON_Y:              return "Y";
-        case SDL_CONTROLLER_BUTTON_BACK:           return "Select";
-        case SDL_CONTROLLER_BUTTON_GUIDE:          return "Guide";
-        case SDL_CONTROLLER_BUTTON_START:          return "Start";
+        case SDL_CONTROLLER_BUTTON_BACK:           return "SELECT";   // UI 底排的 SELECT
+        case SDL_CONTROLLER_BUTTON_GUIDE:          return "Fn";       // UI 顶排的 Fn1/Fn2 共用此值
+        case SDL_CONTROLLER_BUTTON_START:          return "START";    // UI 底排的 START
         case SDL_CONTROLLER_BUTTON_LEFTSTICK:      return "L3";
         case SDL_CONTROLLER_BUTTON_RIGHTSTICK:     return "R3";
         case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:   return "LB";
