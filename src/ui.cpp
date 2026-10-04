@@ -6,6 +6,10 @@
 #include <cstdio>
 
 static const float PI = 3.14159265f;
+static constexpr int MACHINE_OFFSET_Y = 40;
+static constexpr int RECT_BUTTON_HEIGHT = 66;
+// 机身高600,日志屏幕高460:上下各留70,在机身内垂直居中。
+static constexpr SDL_Rect EVENT_LOG_AREA = {503, 370 + MACHINE_OFFSET_Y, 613, 460};
 
 static bool ButtonHeld(SDL_GameController *gc, SDL_GameControllerButton btn) {
     return gc && SDL_GameControllerGetButton(gc, btn) != 0;
@@ -292,7 +296,7 @@ static void DrawStickGauge(SDL_Renderer *r, const FontSet &fonts,
 
 // 事件日志:渲染在中央"屏幕"区域内,内容垂直/水平居中,显示最近 LOG_MAX 条。
 static void DrawLog(SDL_Renderer *r, const FontSet &fonts, const std::deque<std::string> &log) {
-    SDL_Rect screen = {503, 340, 613, 460};   // 与 DrawFrontOutline 的屏幕一致;中心 x=810
+    SDL_Rect screen = EVENT_LOG_AREA;
     // 底衬,让文字在屏幕上可读
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r, 0, 0, 0, 120);
@@ -305,43 +309,45 @@ static void DrawLog(SDL_Renderer *r, const FontSet &fonts, const std::deque<std:
     if (start < 0) start = 0;
     for (auto it = log.begin() + start; it != log.end(); ++it) vis.push_back(*it);
 
-    const int ln = 30;
     int n = (int)vis.size();
     if (n == 0) n = 1;                       // 空时显示提示占一行
-    const int headH = 34;                    // 标题行高
-    const int totalH = headH + 10 + n * ln;  // 标题 + 间距 + 行数
-    int top = screen.y + (screen.h - totalH) / 2;
+    const int padding = 24;
+    const int rows = n + 1;                  // 标题与事件按可用高度均匀分布
+    const int availableHeight = screen.h - 2 * padding;
+    auto rowCenter = [&](int row) {
+        return screen.y + padding + availableHeight * (2 * row + 1) / (2 * rows);
+    };
 
-    DrawSectionTitle(r, fonts, "EVENT LOG", WINDOW_W / 2, top + headH / 2);
-    int y = top + headH + 10 + ln / 2;
+    DrawSectionTitle(r, fonts, "EVENT LOG", WINDOW_W / 2, rowCenter(0));
     if (vis.empty()) {
-        DrawCentered(r, fonts.hint, "(waiting for input)", C.dimCyan, WINDOW_W / 2, y);
+        DrawCentered(r, fonts.hint, "(waiting for input)", C.dimCyan, WINDOW_W / 2, rowCenter(1));
     } else {
         for (int i = 0; i < (int)vis.size(); ++i) {
-            DrawCentered(r, fonts.hint, vis[i].c_str(), C.white, WINDOW_W / 2, y);
-            y += ln;
+            DrawCentered(r, fonts.hint, vis[i].c_str(), C.white, WINDOW_W / 2, rowCenter(i + 1));
         }
     }
 }
 
 // 顶部按键:位于机身外框上方。LB(左肩)、LT(左扳机)对称于 R2→RB(右肩)、RT(右扳机),
-// 中间为 Fn1 / Fn2。肩键=数字按下;扳机=模拟深度条 + 按下高亮。
-static void DrawTopTriggers(SDL_Renderer *r, const FontSet &fonts, SDL_GameController *gc) {
+// 中间为 Fn1 / Fn2。扳机仍用轴判断按下,外观与其他矩形按钮一致。
+static void DrawTopTriggers(SDL_Renderer *r, const FontSet &fonts, SDL_GameController *gc,
+                            const AppState &state) {
     struct Key {
         const char *label;
         SDL_GameControllerAxis ax;   // 非触发键用 SDL_CONTROLLER_AXIS_INVALID(不画深度)
         SDL_GameControllerButton btn;   // 触发键无独立按钮,置 INVALID,按下状态改由轴向判断
+        CustomKey custom = CustomKey::Count;
     };
     static const Key keys[6] = {
         {"LB",  SDL_CONTROLLER_AXIS_INVALID,     SDL_CONTROLLER_BUTTON_LEFTSHOULDER},
         {"LT",  SDL_CONTROLLER_AXIS_TRIGGERLEFT, SDL_CONTROLLER_BUTTON_INVALID},
-        {"Fn1", SDL_CONTROLLER_AXIS_INVALID,     SDL_CONTROLLER_BUTTON_GUIDE},
-        {"Fn2", SDL_CONTROLLER_AXIS_INVALID,     SDL_CONTROLLER_BUTTON_GUIDE},
+        {"Fn1", SDL_CONTROLLER_AXIS_INVALID,     SDL_CONTROLLER_BUTTON_INVALID, CustomKey::Fn1},
+        {"Fn2", SDL_CONTROLLER_AXIS_INVALID,     SDL_CONTROLLER_BUTTON_INVALID, CustomKey::Fn2},
         {"RT",  SDL_CONTROLLER_AXIS_TRIGGERRIGHT, SDL_CONTROLLER_BUTTON_INVALID},
         {"RB",  SDL_CONTROLLER_AXIS_INVALID,     SDL_CONTROLLER_BUTTON_RIGHTSHOULDER},
     };
-    const int bw = 104, bh = 66, gap = 16;
-    const int y0 = 226;                       // 位于机身顶部(y=300)之上 → 外框之外
+    const int bw = 104, bh = RECT_BUTTON_HEIGHT, gap = 16;
+    const int y0 = 226 + MACHINE_OFFSET_Y;     // 顶排随机身整体下移
     // 左组(LB,LT)中心=290;fn1 在 LT 右侧留一段距离,fn2 在屏中线对称位置
     const int leftCX = 290;
     const int pairW = 2 * bw + gap;           // 104+16+104 = 224
@@ -359,77 +365,78 @@ static void DrawTopTriggers(SDL_Renderer *r, const FontSet &fonts, SDL_GameContr
     };
     for (int i = 0; i < 6; ++i) {
         SDL_Rect b = {bx[i], y0, bw, bh};
-        // 模拟触发深度(仅触发键):从底向上填充
-        if (keys[i].ax != SDL_CONTROLLER_AXIS_INVALID) {
-            int pct = std::clamp((int)(AxisVal(gc, keys[i].ax) * 100 / 32767), 0, 100);
-            SDL_SetRenderDrawColor(r, 0, 30, 40, 180);
-            SDL_RenderFillRect(r, &b);
-            if (pct > 0) {
-                SDL_SetRenderDrawColor(r, C.yellow.r, C.yellow.g, C.yellow.b, 255);
-                SDL_Rect fill = {b.x, b.y + b.h - b.h * pct / 100, b.w, b.h * pct / 100};
-                SDL_RenderFillRect(r, &fill);
-            }
-        } else {
-            // 功能键:纯底色
-            SDL_SetRenderDrawColor(r, 10, 14, 24, 255);
-            SDL_RenderFillRect(r, &b);
-        }
+        SDL_SetRenderDrawColor(r, 10, 14, 24, 255);
+        SDL_RenderFillRect(r, &b);
         // 触发键在无独立按钮时,按下状态由轴向超过阈值判断(避免与肩键共用同一按钮常量而联动)
-        bool a;
-        if (keys[i].btn != SDL_CONTROLLER_BUTTON_INVALID)
+        bool a = false;
+        if (keys[i].custom != CustomKey::Count)
+            a = CustomKeyHighlighted(state, keys[i].custom);
+        else if (keys[i].btn != SDL_CONTROLLER_BUTTON_INVALID)
             a = ButtonHeld(gc, keys[i].btn);
-        else
+        else if (keys[i].ax != SDL_CONTROLLER_AXIS_INVALID)
             a = std::abs(AxisVal(gc, keys[i].ax)) > 3277;   // ~10% 行程视为按下
-        SDL_Color col = a ? C.magenta : C.dimCyan;
-        DrawGlowRect(r, b, col, a ? 4 : 2);
-        DrawCentered(r, fonts.hint, keys[i].label, a ? C.white : C.dimCyan,
-                     b.x + b.w / 2, b.y + b.h / 2);
+        DrawButtonBox(r, fonts.hint, keys[i].label, b, a);
     }
 }
 
 // 正面轮廓:主体圆角矩形 + 中央屏幕(内为事件日志)+ 底缘小键。
 static void DrawFrontOutline(SDL_Renderer *r, const FontSet &fonts, SDL_GameController *gc,
-                             const std::deque<std::string> &log) {
-    SDL_Rect body = {90, 300, WINDOW_W - 180, 600};   // 缩窄:左右各留 90,高度略收
+                             const AppState &state) {
+    SDL_Rect body = {90, 300 + MACHINE_OFFSET_Y, WINDOW_W - 180, 600};
     DrawRoundedRect(r, body, 46, (SDL_Color){34, 38, 58, 255}, true);
     DrawRoundedRect(r, body, 46, C.dimCyan, false);
 
     // 顶部扳机键(LT / L2 / RT / R2)
-    DrawTopTriggers(r, fonts, gc);
+    DrawTopTriggers(r, fonts, gc, state);
 
-    // 中央屏幕(4:3,中心与整机中线 x=810 对正;下缘避开底排按键 y=812)
-    SDL_Rect screen = {503, 340, 613, 460};
+    // 日志屏幕在机身内垂直居中。
+    SDL_Rect screen = EVENT_LOG_AREA;
     DrawRoundedRect(r, screen, 20, (SDL_Color){6, 6, 12, 255}, true);
 
     // 两组圆形按键:直径与间距完全一致,左右列中线对齐(内移后仍对称)
-    DrawDPad(r, fonts, gc, 290, 444, 66, nullptr);            // 左:D-pad 四圆键
-    DrawABXY(r, fonts, gc, 1330, 444, 66);                    // 右:ABXY 四圆键 → 与左 D-pad 镜像
+    DrawDPad(r, fonts, gc, 290, 444 + MACHINE_OFFSET_Y, 66, nullptr); // 左:D-pad 四圆键
+    DrawABXY(r, fonts, gc, 1330, 444 + MACHINE_OFFSET_Y, 66);        // 右:ABXY 镜像
 
     DrawStickGauge(r, fonts, nullptr, gc,                     // 左摇杆(D-pad 下)
-                   SDL_CONTROLLER_AXIS_LEFTX, SDL_CONTROLLER_AXIS_LEFTY, 290, 650, 70,
+                   SDL_CONTROLLER_AXIS_LEFTX, SDL_CONTROLLER_AXIS_LEFTY, 290, 650 + MACHINE_OFFSET_Y, 70,
                    "L3", SDL_CONTROLLER_BUTTON_LEFTSTICK);
     DrawStickGauge(r, fonts, nullptr, gc,                     // 右摇杆(ABXY 下)→ 与左摇杆镜像
-                   SDL_CONTROLLER_AXIS_RIGHTX, SDL_CONTROLLER_AXIS_RIGHTY, 1330, 650, 70,
+                   SDL_CONTROLLER_AXIS_RIGHTX, SDL_CONTROLLER_AXIS_RIGHTY, 1330, 650 + MACHINE_OFFSET_Y, 70,
                    "R3", SDL_CONTROLLER_BUTTON_RIGHTSTICK);
 
     // 底缘:两列各自紧凑居中 —— 左列(`+`/`Fn3`)中心=290,右列(`SELECT`/`START`)中心=1330
-    const int keyw = 100, keygap = 14;
-    SDL_Rect plus = {290 - keyw - keygap / 2, 812, keyw, 44};   // +   左列左
-    SDL_Rect fn3  = {290 + keygap / 2,        812, keyw, 44};   // Fn3 左列右
-    SDL_Rect stan = {1330 - keyw - keygap / 2, 812, keyw, 44};  // SELECT 右列左
-    SDL_Rect seln = {1330 + keygap / 2,        812, keyw, 44};  // START 右列右
-    DrawButtonBox(r, fonts.hint, "+",    plus, false);          // 键值待定,当前不绑定
-    DrawButtonBox(r, fonts.hint, "Fn3",  fn3,  false);          // 键值待定,当前不绑定
+    const int keyw = 100, keyh = RECT_BUTTON_HEIGHT, keygap = 14;
+    const int keyy = 812 + MACHINE_OFFSET_Y;
+    SDL_Rect plus = {290 - keyw - keygap / 2, keyy, keyw, keyh};  // +   左列左
+    SDL_Rect fn3  = {290 + keygap / 2,        keyy, keyw, keyh};  // Fn3 左列右
+    SDL_Rect stan = {1330 - keyw - keygap / 2, keyy, keyw, keyh}; // SELECT 右列左
+    SDL_Rect seln = {1330 + keygap / 2,        keyy, keyw, keyh}; // START 右列右
+    DrawButtonBox(r, fonts.hint, "+",    plus, CustomKeyHighlighted(state, CustomKey::Plus));
+    DrawButtonBox(r, fonts.hint, "Fn3",  fn3,  CustomKeyHighlighted(state, CustomKey::Fn3));
     DrawButtonBox(r, fonts.hint, "SELECT",  stan, ButtonHeld(gc, SDL_CONTROLLER_BUTTON_BACK));
     DrawButtonBox(r, fonts.hint, "START", seln, ButtonHeld(gc, SDL_CONTROLLER_BUTTON_START));
 
     // 事件日志画在屏幕区域上
-    DrawLog(r, fonts, log);
+    DrawLog(r, fonts, state.log);
 }
 
-void DrawDashboard(SDL_Renderer *r, const FontSet &fonts,
-                   SDL_GameController *mainController,
-                   const std::deque<std::string> &log) {
-    DrawStatusLine(r, fonts, mainController);
-    DrawFrontOutline(r, fonts, mainController, log);
+void DrawDashboard(SDL_Renderer *r, const FontSet &fonts, const AppState &state) {
+    DrawStatusLine(r, fonts, state.mainController);
+    DrawFrontOutline(r, fonts, state.mainController, state);
+    if (state.pointerVisible) {
+        // 放大十字标记,中心仍对应实际输入坐标。
+        const int radius = 30, thickness = 5;
+        SDL_Rect horizontal = {state.pointerX - radius, state.pointerY - thickness / 2,
+                               radius * 2 + 1, thickness};
+        SDL_Rect vertical = {state.pointerX - thickness / 2, state.pointerY - radius,
+                             thickness, radius * 2 + 1};
+        SDL_SetRenderDrawColor(r, C.magenta.r, C.magenta.g, C.magenta.b, 255);
+        SDL_RenderFillRect(r, &horizontal);
+        SDL_RenderFillRect(r, &vertical);
+        char position[64];
+        std::snprintf(position, sizeof(position), "Cursor: X %d  Y %d", state.pointerX, state.pointerY);
+        DrawCentered(r, fonts.hint, position, C.white, WINDOW_W / 2, 982);
+    }
+    DrawCentered(r, fonts.hint, "Hold +, SELECT and START together to exit.",
+                 C.dimCyan, WINDOW_W / 2, WINDOW_H - 38);
 }

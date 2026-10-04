@@ -33,7 +33,14 @@
 支持以下输入方式:
 - **键盘输入**: 显示按键名称 (如: A, B, Enter, Space等)
 - **触摸输入**: 显示触摸坐标 (如: Touch(540, 360))
+  检测到 `play_joystick` 时，事件日志过滤 Mouse 事件，保留 Touch 事件，避免触摸产生重复记录。
 - **游戏手柄**: 显示按钮名称 (如: Joystick A, Start等)
+- **鼠标输入**: 移动或点击后，在当前位置显示十字标记，并在页底显示 X/Y 坐标。
+- **退出程序**: 同时按住实体 `+`、`SELECT` 和 `START`；页底提示为 "Hold +, SELECT and START together to exit."。
+
+### ROCKNIX Tools 入口
+
+掌机程序安装在 `/storage/yoobox-input-tester/`。将 `scripts/rocknix-tools/YooBox Input Tester.sh` 复制到 `/storage/.config/modules/` 并赋予执行权限，即可从 Tools 启动。若菜单尚未显示入口，在 EmulationStation 中更新游戏列表。程序退出后返回 Tools。
 
 ### 4. 显示逻辑
 - 每次输入后刷新显示新的按键值

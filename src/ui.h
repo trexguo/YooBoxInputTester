@@ -30,12 +30,11 @@ void DrawGlowRect(SDL_Renderer *r, SDL_Rect rect, SDL_Color col, int glow);
 //   - 按键网格(A/B/X/Y, Start/Select, LB/RB, L3/R3)
 //   - D-pad 十字
 //   - 左右摇杆表 + 数值
-//   - LT/RT 扳机水平条
+//   - LT/RT 扳机按钮(轴值决定按下高亮)
 //   - 底部事件日志
-// `mainController` 可为 null(无控制器 → 全部 idle + 提示)。
-// `log` 为最近事件(末 ~8 条)。
-void DrawDashboard(SDL_Renderer *r, const FontSet &fonts,
-                   SDL_GameController *mainController,
-                   const std::deque<std::string> &log);
+// `state.mainController` 可为 null;Linux 自定义键独立读取。
+// `state.log` 为最近事件(末 ~8 条)。
+struct AppState;
+void DrawDashboard(SDL_Renderer *r, const FontSet &fonts, const AppState &state);
 
 #endif // YOOBOX_UI_H

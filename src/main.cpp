@@ -50,6 +50,7 @@ int main(int argc, char *argv[]) {
 
     AppState state;
     ControllersOpenAll(state);
+    CustomKeysPoll(state); // 首批事件前识别 play_joystick,避免触摸与模拟鼠标重复入日志。
 
     bool running = true;
     SDL_Event event;
@@ -61,21 +62,32 @@ int main(int argc, char *argv[]) {
 
             // 手柄热插拔(ADDED/REMOVED 只更新连接状态,不入日志)
             ControllersHandleEvent(state, event);
+            PointerHandleEvent(state, event);
             // 手柄按钮/轴、键盘、触摸、鼠标事件 → 事件日志
-            std::string name = KeyName(event);
+            std::string name = KeyName(event, state.customInputFd >= 0);
             if (!name.empty())
                 AppLog(state, name);
         }
+
+        CustomKeysPoll(state);
+        if (ExitComboHeld(state,
+                state.mainController && SDL_GameControllerGetButton(state.mainController, SDL_CONTROLLER_BUTTON_BACK),
+                state.mainController && SDL_GameControllerGetButton(state.mainController, SDL_CONTROLLER_BUTTON_START))) {
+            SDL_Log("Exit: PLUS + SELECT + START");
+            running = false;
+        }
+        if (!running) break;
 
         SDL_SetRenderDrawColor(renderer, C.bg.r, C.bg.g, C.bg.b, 255);
         SDL_RenderClear(renderer);
         DrawCyberGrid(renderer);
 
-        DrawDashboard(renderer, fonts, state.mainController, state.log);
+        DrawDashboard(renderer, fonts, state);
 
         SDL_RenderPresent(renderer);
     }
 
+    CustomKeysClose(state);
     FontUnload(fonts);
     SDL_StopTextInput();
     SDL_DestroyRenderer(renderer);

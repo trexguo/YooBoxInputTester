@@ -55,7 +55,7 @@ There is no test/lint step, so "verify" means: it compiles, and it runs. The bin
 
 - **Static linking is only partially supported**: the CMake toolchain file sets `CMAKE_EXE_LINKER_FLAGS_INIT` with `-rpath`/`-L`, but `-static` is not wired up anywhere. README's "static link" section asks for it via `-DCMAKE_EXE_LINKER_FLAGS="-static"` — and that only works if the sysroot actually contains `.a` files. Don't assume static is available.
 
-- **Bottom keys `+` and `Fn3` are currently unbound**: they render but their active state is hardcoded to `false` in `DrawButtonBox` (bindings TBD by the user). `SELECT`/`START` are bound to `SDL_CONTROLLER_BUTTON_BACK`/`START` respectively. When wiring up `+`/`Fn3` later, replace the `false` with a `ButtonHeld(...)` and, if a distinct event is wanted, add it to the `KeyName` mapping in `src/app.cpp`.
+- **Custom keys use Linux raw input, not SDL controller button constants**: `CustomKeysPoll` in `src/app.cpp` finds `play_joystick` by name and reads it without grabbing it. Confirmed evdev bindings are Fn1 = 615, Fn3 = 102, and `+` = 464. Fn2 evdev 614 remains provisional: repeated physical presses changed ADC3 to 683–684 without generating events. On the measured RK3562 device, Fn2 also reads `ffaa0000.saradc` channel 3 with a narrow range and hysteresis, distinct from START on the same channel. ADC and evdev states are combined, and custom highlights last at least 250 ms without altering held state. Never bind Fn1/Fn2 to the same SDL GUIDE button. Non-Linux builds keep these keys idle. `SELECT`/`START` remain bound to SDL BACK/START. See `docs/custom-key-codes.md` for measurements.
 
 ## Assets
 
