@@ -6,7 +6,7 @@
 #include <cstdio>
 
 static const float PI = 3.14159265f;
-static constexpr int MACHINE_OFFSET_Y = 40;
+static constexpr int MACHINE_OFFSET_Y = 20;
 static constexpr int RECT_BUTTON_HEIGHT = 66;
 // 机身高600,日志屏幕高460:上下各留70,在机身内垂直居中。
 static constexpr SDL_Rect EVENT_LOG_AREA = {503, 370 + MACHINE_OFFSET_Y, 613, 460};
