@@ -30,5 +30,5 @@
 ## 6. Build + verification
 
 - [x] 6.1 Native build compiles cleanly and the app starts, stays up, and exits on ESC (background run + kill per CLAUDE.md; confirm `exit=143` and empty log)
-- [x] 6.2 Cross build for RK3326 compiles (`cmake --build build_cross -j` using the README toolchain; if the toolchain path is unavailable on this machine, note it and verify only the native path)
+- [x] 6.2 Cross build for RK3562 with the ROCKNIX RK3566 toolchain compiles (`cmake --build build_cross -j` using the README toolchain; if the toolchain path is unavailable on this machine, note it and verify only the native path)
 - [ ] 6.3 Manually confirm each spec scenario is observable: button press+release, simultaneous multi-button, D-pad direction/diagonal/release, stick deflection+centered, trigger press+release, event log append, no-controller idle, ESC quits

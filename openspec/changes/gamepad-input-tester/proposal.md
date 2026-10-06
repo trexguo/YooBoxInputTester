@@ -10,7 +10,7 @@ The current `main.cpp` (the SDL2 "Hello, Yoobox Y1" demo) reports input as a sin
 - Add **two analog stick indicators** (`left`, `right`) plotting the stick position on a 2-D center/circle graphic, plus a live numeric readout of X/Y axis values.
 - Add **trigger level bars** for `LT`/`RT` showing pressed depth (analog value, not just on/off).
 - Add a compact **live event log** (last several events) as a secondary readout, since the visual state alone hides transient taps; the existing keyboard/touch/mouse/gamepad event text continues to be logged there.
-- Keep the existing `Esc` quits, resources (`res/fonts/font.ttf`), background styling, and both build paths (native + RK3326 cross) working unchanged.
+- Keep the existing `Esc` quits, resources (`res/fonts/font.ttf`), background styling, and both build paths (native + RK3562 cross using the ROCKNIX RK3566 toolchain) working unchanged.
 
 ## Capabilities
 
@@ -26,5 +26,5 @@ The current `main.cpp` (the SDL2 "Hello, Yoobox Y1" demo) reports input as a sin
 - **`CMakeLists.txt`**: both branches list the new source files and add the `src/` include dir; the SDL2/pkg-config wiring, `SDL2main` filter, and cross-compile branch logic are unchanged.
 - **`res/fonts/font.ttf`**: reused at existing sizes (and possibly one additional size for the log).
 - **Dependencies**: no new libraries. SDL2 + SDL2_ttf + SDL2_image remain the only requirements.
-- **Build**: `toolchain.cmake` unchanged. Both native (Linux/macOS) and RK3326 cross builds must still compile and link.
+- **Build**: `toolchain.cmake` unchanged. Both native (Linux/macOS) and RK3562 cross builds using the ROCKNIX RK3566 toolchain must still compile and link.
 - **`README.md`**: likely a short note that the app is now an input tester (optional, out of spec scope).

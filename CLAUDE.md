@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An SDL2 handheld-gamepad input tester targeting a specific embedded device: the **Yoobox Y1**, a 4.5" RK3326 (ARM aarch64) Linux handheld with a **1620×1080** screen. The window size and layout (grid, glow, text placement) are hardcoded around that resolution.
+An SDL2 handheld-gamepad input tester targeting a specific embedded device: the **Yoobox Y1**, a 4.5" RK3562 (ARM aarch64) Linux handheld with a **1620×1080** screen. The window size and layout (grid, glow, text placement) are hardcoded around that resolution.
 
 The entry point is `src/main.cpp`, backed by `src/app.*` (state, controller open/handle, event log), `src/ui.*` (all dashboard rendering), and `src/font.*` (TTF load/render). There is no test suite and no linting — it is a handful of source files plus a CMake build.
 
@@ -15,14 +15,15 @@ The rendered layout is a hardcoded dashboard: device body outline, top trigger r
 Two entirely separate paths exist inside `CMakeLists.txt`, chosen by whether CMAKE_CROSSCOMPILING is set (i.e. whether you pass `-DCMAKE_TOOLCHAIN_FILE=`):
 
 - **Native** (Linux or macOS for development): uses `pkg-config` (`find_package(PkgConfig REQUIRED)` + `pkg_check_modules`). Requires `sdl2` and `SDL2_ttf` present in the pkg-config path (SDL_image is **not** used — the logo was removed, so it is not checked or linked). On macOS from Homebrew, `sdl2` alone is commonly installed but `sdl2_ttf` is not — the configure step fails outright because the check is `REQUIRED`. Fix is `brew install sdl2_ttf` (full walkthrough in README's macOS section). Note that Homebrew's `sdl2` package is now provided by **`sdl2-compat`** (pkg-config Name: `sdl2_compat`), which is why the `SDL2main` filter below matters.
-- **Cross** (RK3326 target): the `if(CMAKE_CROSSCOMPILING)` branch reads include/lib dirs straight out of `CMAKE_SYSROOT` and **skips pkg-config entirely**. This is intentional — without it, pkg-config would grab the host's x86_64 SDL2 and the link would be wrong.
+- **Cross** (RK3562 target, recommended ROCKNIX RK3566 toolchain): the `if(CMAKE_CROSSCOMPILING)` branch reads include/lib dirs straight out of `CMAKE_SYSROOT` and **skips pkg-config entirely**. This is intentional — without it, pkg-config would grab the host's x86_64 SDL2 and the link would be wrong.
 
 ```sh
 # Native dev build (Linux/macOS)
 cmake -S . -B build && cmake --build build -j
 
-# Cross-compile to RK3326 (see README for full toolchain details)
-cmake -B build_cross -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake ..
+# Cross-compile for RK3562 using the ROCKNIX RK3566 toolchain (see README)
+cmake -S . -B build_cross -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake \
+  -DTOOLCHAIN_DIR=/path/to/distribution/build.ROCKNIX-RK3566.aarch64/toolchain
 cmake --build build_cross -j
 ```
 
@@ -41,7 +42,7 @@ There is no test/lint step, so "verify" means: it compiles, and it runs. The bin
 
 ## Non-obvious facts to know before editing
 
-- **The toolchain path is hardcoded absolute**: `toolchain.cmake` sets `TOOLCHAIN_DIR` to `/home/ice/distribution/build.ROCKNIX-RK3326.aarch64/toolchain` (a ROCKNIX build tree on another machine, still using user `ice`). Cross-compiling here only works if that exact path exists; otherwise expect missing-compiler or missing-sysroot errors. Hardcoding it also makes the build **non-hermetic**, so guard against surprising it.
+- **Device SoC and build toolchain are different**: Yoobox Y1 uses **RK3562**. Recommend the **ROCKNIX RK3566 aarch64 toolchain** for this application; do not change runtime device checks to RK3566. `toolchain.cmake` defaults to `$HOME/distribution/build.ROCKNIX-RK3566.aarch64/toolchain`; override it with `-DTOOLCHAIN_DIR=/actual/path`. Its default `ROCKNIX_TARGET_TRIPLE` is `aarch64-rocknix-linux-gnu`; override that cache variable if your SDK uses a different prefix. Use the sysroot and SDL2/SDL2_ttf libraries compatible with the handheld firmware.
 
 - **macOS `SDL2main` filter**: on the native branch, the code strips `SDL2main` out of the SDL2 lib list (`list(FILTER _SDL2_LIBS EXCLUDE REGEX "SDL2main")`). The Homebrew `sdl2-compat` `.pc` declares `-lSDL2main` without shipping that library, so this filter is load-bearing. Don't remove it. The app uses a plain `int main()`, so it genuinely doesn't need `SDL2main`.
 
@@ -68,4 +69,4 @@ The `res/images/` tree is no longer read (the logo was dropped); `SDL2_image` is
 
 ## Docs
 
-`README.md` is the canonical reference and is far more detailed than this file — especially on **Ubuntu dependency install**, the **full RK3326 cross-compile walkthrough**, and the **deployment step (scp/adb/NFS)**. When in doubt, read the README. The repo uses the `main` branch; there are no feature-branch conventions.
+`README.md` is the canonical reference and is far more detailed than this file — especially on **Ubuntu dependency install**, the **full RK3562 cross-compile walkthrough using the ROCKNIX RK3566 toolchain**, and the **deployment step (scp/adb/NFS)**. When in doubt, read the README. The repo uses the `main` branch; there are no feature-branch conventions.

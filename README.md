@@ -6,10 +6,12 @@
 
 ## 项目概述
 
-这是一个基于SDL2的Hello World演示程序，展示基本的窗口管理、事件处理和渲染功能。
+这是一个基于 SDL2 的 YooBox Y1 掌机输入测试程序，用于检测按键、摇杆和触摸输入。Y1 使用 RK3562 SoC，交叉编译建议使用 ROCKNIX RK3566 aarch64 工具链。
 
 ## 硬件规格
 
+- **型号**: YooBox Y1
+- **SoC**: Rockchip RK3562（ARM aarch64）
 - **屏幕尺寸**: 4.5英寸
 - **分辨率**: 1620×1080
 - **PPI**: 约450 (计算公式: √(1620² + 1080²) / 4.5 ≈ 450)
@@ -41,7 +43,7 @@
   检测到 `play_joystick` 时，事件日志过滤 Mouse 事件，保留 Touch 事件，避免触摸产生重复记录。
 - **游戏手柄**: 显示按钮名称 (如: Joystick A, Start等)
   底层输入设备名为 `play_joystick` 时，对调 X/Y 按钮映射，界面高亮和事件日志保持一致；其他手柄使用原映射。
-- **鼠标输入**: 移动或点击后，在当前位置显示十字标记，并在页底显示 X/Y 坐标。
+- **鼠标输入**: 移动或点击后，在当前位置显示十字标记，不额外显示光标坐标文字。
 - **退出程序**: 同时按住实体 `+`、`SELECT` 和 `START`；页底同时显示中文和英文退出提示。
 
 ### ROCKNIX Tools 入口
@@ -159,115 +161,53 @@ sudo apt install -y libwayland-dev libxkbcommon-dev
 | 字体不显示 | 确认 `res/fonts/font.ttf` 文件存在 |
 | Wayland 不可用 | 程序会自动回退到 X11 |
 
-## 交叉编译指南 (RK3326 aarch64)
+## 交叉编译指南（Y1 / RK3562，推荐 ROCKNIX RK3566 工具链）
 
-### 工具链信息
+### 硬件与工具链
 
-- **目标平台**: RK3326 (ARM aarch64)
-- **工具链路径**: `/home/ice/distribution/build.ROCKNIX-RK3326.aarch64/toolchain`
-- **编译器前缀**: `aarch64-rocknix-linux-gnueabi-`
-- **编译器版本**: GCC 14.2.0
-- **Sysroot**: `toolchain/aarch64-rocknix-linux-gnueabi/sysroot`
+- **目标设备**: YooBox Y1，Rockchip RK3562，Linux aarch64。
+- **推荐工具链**: ROCKNIX 的 RK3566 aarch64 构建工具链。RK3566 是推荐工具链的构建配置名称，Y1 硬件和运行时识别均为 RK3562。
+- **工具链目录**: ROCKNIX 构建树中的 `build.ROCKNIX-RK3566.aarch64/toolchain`。
+- **编译器前缀**: 默认 `aarch64-rocknix-linux-gnu-`；编译器版本和前缀以实际 SDK 为准。
+- **Sysroot**: 默认 `toolchain/aarch64-rocknix-linux-gnu/sysroot`，需要 SDL2 和 SDL2_ttf 头文件与库。
 
-### 工具链目录结构
+准备 ROCKNIX 构建环境时，参考官方 [Docker 构建指南](https://rocknix.org/contribute/build/#docker-recommended)，使用 RK3566 构建配置准备工具链和依赖。本项目只编译应用程序。
 
-```
-/home/ice/distribution/build.ROCKNIX-RK3326.aarch64/toolchain/
+目录示例：
+
+```text
+distribution/build.ROCKNIX-RK3566.aarch64/toolchain/
 ├── bin/
-│   ├── aarch64-rocknix-linux-gnueabi-gcc
-│   ├── aarch64-rocknix-linux-gnueabi-g++
+│   ├── aarch64-rocknix-linux-gnu-gcc
+│   ├── aarch64-rocknix-linux-gnu-g++
 │   └── ...
-├── aarch64-rocknix-linux-gnueabi/sysroot/
-│   └── usr/
-│       ├── include/
-│       │   ├── SDL2/          # SDL2 头文件
-│       │   └── ...
-│       └── lib/
-│           ├── libSDL2.so
-│           ├── libSDL2_ttf.so
-│           ├── libSDL2_image.so
-│           └── ...
-└── cmake/
+└── aarch64-rocknix-linux-gnu/sysroot/
+    └── usr/
+        ├── include/SDL2/
+        └── lib/
+            ├── libSDL2.so
+            └── libSDL2_ttf.so
 ```
 
-### 交叉编译步骤
+### 编译应用程序
 
-#### 1. 创建工具链文件
+从本仓库根目录执行，路径指向 Linux 构建环境中实际存在的工具链：
 
-项目已包含 `toolchain.cmake`，内容如下：
-
-```cmake
-set(CMAKE_SYSTEM_NAME Linux)
-set(CMAKE_SYSTEM_PROCESSOR aarch64)
-
-set(TOOLCHAIN_DIR /home/ice/distribution/build.ROCKNIX-RK3326.aarch64/toolchain)
-set(CROSS_PREFIX ${TOOLCHAIN_DIR}/bin/aarch64-rocknix-linux-gnueabi)
-set(SYSROOT ${TOOLCHAIN_DIR}/aarch64-rocknix-linux-gnueabi/sysroot)
-
-set(CMAKE_C_COMPILER ${CROSS_PREFIX}-gcc)
-set(CMAKE_CXX_COMPILER ${CROSS_PREFIX}-g++)
-set(CMAKE_AR ${CROSS_PREFIX}-gcc-ar)
-set(CMAKE_RANLIB ${CROSS_PREFIX}-gcc-ranlib)
-set(CMAKE_STRIP ${CROSS_PREFIX}-strip)
-
-set(CMAKE_SYSROOT ${SYSROOT})
-
-set(CMAKE_FIND_ROOT_PATH ${SYSROOT})
-set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+```sh
+cmake -S . -B build_cross \
+  -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake \
+  -DTOOLCHAIN_DIR=/path/to/distribution/build.ROCKNIX-RK3566.aarch64/toolchain \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build_cross -j
+file build_cross/YooBoxInputTester
+# 输出应包含 ELF 64-bit、ARM aarch64
 ```
 
-#### 2. 执行交叉编译
+`toolchain.cmake` 默认路径为 `$HOME/distribution/build.ROCKNIX-RK3566.aarch64/toolchain`，可通过 `-DTOOLCHAIN_DIR=...` 覆盖。若 SDK 的编译器前缀为 `aarch64-rocknix-linux-gnueabi-`，配置时追加 `-DROCKNIX_TARGET_TRIPLE=aarch64-rocknix-linux-gnueabi`，其 sysroot 目录也须与该前缀匹配。更换工具链时使用新的构建目录，避免复用旧的 CMake 编译器缓存。
 
-```bash
-# 创建交叉编译目录
-mkdir build_cross && cd build_cross
+使用 ARMv8-A / Cortex-A53 编译选项。交叉构建跳过主机的 pkg-config，依赖直接来自工具链 sysroot。链接所用 SDL2、SDL2_ttf、glibc 等库必须与掌机固件兼容；新工具链若引入掌机不存在的 `GLIBC_*` 符号，应使用与设备固件匹配的 sysroot / 运行库重新构建。
 
-# 使用工具链文件配置
-cmake -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake ..
-
-# 编译
-make -j$(nproc)
-
-# 验证生成的二进制文件
-file YooBoxInputTester
-# 输出: ELF 64-bit LSB executable, ARM aarch64, ...
-```
-
-#### 3. 一键编译脚本
-
-```bash
-#!/bin/bash
-# cross_build.sh
-
-TOOLCHAIN_DIR=/home/ice/distribution/build.ROCKNIX-RK3326.aarch64/toolchain
-BUILD_DIR=build_cross
-
-rm -rf ${BUILD_DIR}
-mkdir ${BUILD_DIR}
-cd ${BUILD_DIR}
-
-cmake -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake .. && make -j$(nproc)
-
-if [ $? -eq 0 ]; then
-    echo "========================================="
-    echo "交叉编译成功!"
-    echo "二进制文件: ${BUILD_DIR}/YooBoxInputTester"
-    file YooBoxInputTester
-    echo "========================================="
-else
-    echo "交叉编译失败!"
-    exit 1
-fi
-```
-
-使用方法：
-```bash
-chmod +x cross_build.sh
-./cross_build.sh
-```
+Fn2 ADC 的运行时适配继续检查设备树 `rockchip,rk3562`；工具链名称不影响该硬件检查。
 
 ### 部署到目标设备
 

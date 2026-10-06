@@ -1,9 +1,14 @@
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 
-set(TOOLCHAIN_DIR /home/ice/distribution/build.ROCKNIX-RK3326.aarch64/toolchain)
-set(CROSS_PREFIX ${TOOLCHAIN_DIR}/bin/aarch64-rocknix-linux-gnueabi)
-set(SYSROOT ${TOOLCHAIN_DIR}/aarch64-rocknix-linux-gnueabi/sysroot)
+# YooBox Y1 uses RK3562; build the application with the ROCKNIX RK3566 SDK.
+set(TOOLCHAIN_DIR "$ENV{HOME}/distribution/build.ROCKNIX-RK3566.aarch64/toolchain"
+    CACHE PATH "ROCKNIX RK3566 aarch64 toolchain directory")
+set(ROCKNIX_TARGET_TRIPLE "aarch64-rocknix-linux-gnu"
+    CACHE STRING "Compiler prefix and sysroot directory name in the ROCKNIX SDK")
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES TOOLCHAIN_DIR ROCKNIX_TARGET_TRIPLE)
+set(CROSS_PREFIX "${TOOLCHAIN_DIR}/bin/${ROCKNIX_TARGET_TRIPLE}")
+set(SYSROOT "${TOOLCHAIN_DIR}/${ROCKNIX_TARGET_TRIPLE}/sysroot")
 
 set(CMAKE_C_COMPILER ${CROSS_PREFIX}-gcc)
 set(CMAKE_CXX_COMPILER ${CROSS_PREFIX}-g++)
@@ -19,6 +24,6 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
-set(CMAKE_C_FLAGS_INIT "-I${SYSROOT}/usr/include")
-set(CMAKE_CXX_FLAGS_INIT "-I${SYSROOT}/usr/include")
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-L${SYSROOT}/usr/lib -Wl,-rpath,/usr/lib")
+set(CMAKE_C_FLAGS_INIT "-march=armv8-a -mtune=cortex-a53")
+set(CMAKE_CXX_FLAGS_INIT "-march=armv8-a -mtune=cortex-a53")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-L${SYSROOT}/usr/lib -Wl,-rpath,/usr/lib -Wl,-rpath-link,${SYSROOT}/usr/lib")
