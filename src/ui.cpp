@@ -12,7 +12,7 @@ static constexpr int RECT_BUTTON_HEIGHT = 66;
 static constexpr SDL_Rect EVENT_LOG_AREA = {503, 370 + MACHINE_OFFSET_Y, 613, 460};
 
 static bool ButtonHeld(SDL_GameController *gc, SDL_GameControllerButton btn) {
-    return gc && SDL_GameControllerGetButton(gc, btn) != 0;
+    return gc && SDL_GameControllerGetButton(gc, ControllerButtonForDevice(gc, btn)) != 0;
 }
 
 static Sint16 AxisVal(SDL_GameController *gc, SDL_GameControllerAxis ax) {
@@ -435,8 +435,10 @@ void DrawDashboard(SDL_Renderer *r, const FontSet &fonts, const AppState &state)
         SDL_RenderFillRect(r, &vertical);
         char position[64];
         std::snprintf(position, sizeof(position), "Cursor: X %d  Y %d", state.pointerX, state.pointerY);
-        DrawCentered(r, fonts.hint, position, C.white, WINDOW_W / 2, 982);
+        DrawCentered(r, fonts.hint, position, C.white, WINDOW_W / 2, 970);
     }
+    DrawCentered(r, fonts.hint, "同时按住加号键、SELECT 和 START 退出程序。",
+                 C.dimCyan, WINDOW_W / 2, WINDOW_H - 64);
     DrawCentered(r, fonts.hint, "Hold +, SELECT and START together to exit.",
-                 C.dimCyan, WINDOW_W / 2, WINDOW_H - 38);
+                 C.dimCyan, WINDOW_W / 2, WINDOW_H - 24);
 }

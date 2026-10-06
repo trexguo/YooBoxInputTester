@@ -37,6 +37,8 @@ void AppLog(AppState &st, const std::string &s);
 std::string KeyName(SDL_Event &e, bool suppressMouse = false);
 void PointerHandleEvent(AppState &st, const SDL_Event &e);
 bool ExitComboHeld(const AppState &st, bool selectHeld, bool startHeld);
+// play_joystick 的 X/Y 对调;交换是对称的,可用于状态读取和事件命名。
+SDL_GameControllerButton ControllerButtonForDevice(SDL_GameController *gc, SDL_GameControllerButton button);
 
 // 打开所有已连接手柄,并把第一个设为主控;已打开的保留
 void ControllersOpenAll(AppState &st);

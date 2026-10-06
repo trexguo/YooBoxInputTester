@@ -2,6 +2,8 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
+#include <cmath>
 #ifdef __linux__
 #include <cerrno>
 #include <cstring>
@@ -55,12 +57,23 @@ void AppLog(AppState &st, const std::string &s) {
 
 void PointerHandleEvent(AppState &st, const SDL_Event &e) {
     switch (e.type) {
+        case SDL_FINGERDOWN:
+        case SDL_FINGERMOTION:
+        case SDL_FINGERUP:
+            if (!std::isfinite(e.tfinger.x) || !std::isfinite(e.tfinger.y)) return;
+            st.pointerX = std::min(WINDOW_W - 1,
+                static_cast<int>(std::clamp(e.tfinger.x, 0.0f, 1.0f) * WINDOW_W));
+            st.pointerY = std::min(WINDOW_H - 1,
+                static_cast<int>(std::clamp(e.tfinger.y, 0.0f, 1.0f) * WINDOW_H));
+            break;
         case SDL_MOUSEMOTION:
+            if (e.motion.which == SDL_TOUCH_MOUSEID) return;
             st.pointerX = e.motion.x;
             st.pointerY = e.motion.y;
             break;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
+            if (e.button.which == SDL_TOUCH_MOUSEID) return;
             st.pointerX = e.button.x;
             st.pointerY = e.button.y;
             break;
@@ -72,6 +85,16 @@ void PointerHandleEvent(AppState &st, const SDL_Event &e) {
 
 bool ExitComboHeld(const AppState &st, bool selectHeld, bool startHeld) {
     return CustomKeyHeld(st, CustomKey::Plus) && selectHeld && startHeld;
+}
+
+SDL_GameControllerButton ControllerButtonForDevice(SDL_GameController *gc, SDL_GameControllerButton button) {
+    if (!gc) return button;
+    SDL_Joystick *joystick = SDL_GameControllerGetJoystick(gc);
+    const char *name = joystick ? SDL_JoystickName(joystick) : nullptr;
+    if (!name || std::string(name) != "play_joystick") return button;
+    if (button == SDL_CONTROLLER_BUTTON_X) return SDL_CONTROLLER_BUTTON_Y;
+    if (button == SDL_CONTROLLER_BUTTON_Y) return SDL_CONTROLLER_BUTTON_X;
+    return button;
 }
 
 std::string KeyName(SDL_Event &e, bool suppressMouse) {
@@ -105,7 +128,10 @@ std::string KeyName(SDL_Event &e, bool suppressMouse) {
             return std::string("Mouse MOVE (") + std::to_string(e.motion.x) + ", " + std::to_string(e.motion.y) + ")";
         case SDL_CONTROLLERBUTTONDOWN:
         case SDL_CONTROLLERBUTTONUP: {
-            const char *n = ButtonName(e.cbutton.button);
+            SDL_GameController *gc = SDL_GameControllerFromInstanceID(e.cbutton.which);
+            const auto button = ControllerButtonForDevice(gc,
+                static_cast<SDL_GameControllerButton>(e.cbutton.button));
+            const char *n = ButtonName(static_cast<Uint8>(button));
             char buf[96];
             std::snprintf(buf, sizeof(buf), "%s [%s]",
                           n ? n : SDL_GameControllerNameForIndex(e.cdevice.which),
