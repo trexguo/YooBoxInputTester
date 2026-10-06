@@ -6,7 +6,7 @@
 #include <cstdio>
 
 static const float PI = 3.14159265f;
-static constexpr int MACHINE_OFFSET_Y = 20;
+static constexpr int MACHINE_OFFSET_Y = 0;
 static constexpr int RECT_BUTTON_HEIGHT = 66;
 // 机身高600,日志屏幕高460:上下各留70,在机身内垂直居中。
 static constexpr SDL_Rect EVENT_LOG_AREA = {503, 370 + MACHINE_OFFSET_Y, 613, 460};
@@ -433,9 +433,6 @@ void DrawDashboard(SDL_Renderer *r, const FontSet &fonts, const AppState &state)
         SDL_SetRenderDrawColor(r, C.magenta.r, C.magenta.g, C.magenta.b, 255);
         SDL_RenderFillRect(r, &horizontal);
         SDL_RenderFillRect(r, &vertical);
-        char position[64];
-        std::snprintf(position, sizeof(position), "Cursor: X %d  Y %d", state.pointerX, state.pointerY);
-        DrawCentered(r, fonts.hint, position, C.white, WINDOW_W / 2, 970);
     }
     DrawCentered(r, fonts.hint, "同时按住加号键、SELECT 和 START 退出程序。",
                  C.dimCyan, WINDOW_W / 2, WINDOW_H - 64);
