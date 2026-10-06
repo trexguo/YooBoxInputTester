@@ -1,5 +1,9 @@
 # YooBox Input Tester - SDL2 Demo
 
+<p align="center">
+  <img src="res/images/yoobox-input-tester-logo-v4.png" alt="YooBox Input Tester Logo" width="360">
+</p>
+
 ## 项目概述
 
 这是一个基于SDL2的Hello World演示程序，展示基本的窗口管理、事件处理和渲染功能。
