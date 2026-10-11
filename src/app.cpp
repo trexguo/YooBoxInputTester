@@ -4,17 +4,185 @@
 #include <cstdlib>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #ifdef __linux__
 #include <cerrno>
-#include <cstring>
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/input.h>
+#include <sound/asound.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 #endif
 
 static const std::size_t LOG_MAX = 8;
+
+static void MicrophoneRestorePath(AppState &st) {
+#ifdef __linux__
+    if (st.microphoneMixerFd >= 0) {
+        snd_ctl_elem_value value{};
+        value.id.numid = st.microphoneMixerControl;
+        value.value.enumerated.item[0] = st.microphonePreviousPath;
+        if (ioctl(st.microphoneMixerFd, SNDRV_CTL_IOCTL_ELEM_WRITE, &value) < 0)
+            SDL_Log("Microphone: cannot restore capture path: %s", std::strerror(errno));
+        close(st.microphoneMixerFd);
+        st.microphoneMixerFd = -1;
+    }
+#else
+    (void)st;
+#endif
+}
+
+// 仅 RK817 掌机需要打开硬件 MIC 路由;其他平台沿用默认录音设备。
+static bool MicrophonePreparePath(AppState &st, bool &rk817) {
+    rk817 = false;
+#ifdef __linux__
+    for (int card = 0; card < 32; ++card) {
+        char path[64], id[32]{};
+        std::snprintf(path, sizeof(path), "/sys/class/sound/card%d/id", card);
+        FILE *file = std::fopen(path, "r");
+        if (!file) continue;
+        const bool matched = std::fgets(id, sizeof(id), file) &&
+                             std::strncmp(id, "rockchiprk817", 13) == 0;
+        std::fclose(file);
+        if (!matched) continue;
+        rk817 = true;
+        std::snprintf(path, sizeof(path), "/dev/snd/controlC%d", card);
+        const int fd = open(path, O_RDWR | O_CLOEXEC);
+        snd_ctl_elem_info info{};
+        info.id.iface = SNDRV_CTL_ELEM_IFACE_MIXER;
+        std::strcpy(reinterpret_cast<char *>(info.id.name), "Capture MIC Path");
+        snd_ctl_elem_value value{};
+        if (fd < 0 || ioctl(fd, SNDRV_CTL_IOCTL_ELEM_INFO, &info) < 0 ||
+            info.type != SNDRV_CTL_ELEM_TYPE_ENUMERATED || info.count != 1) {
+            st.microphoneError = "Cannot access RK817 Capture MIC Path";
+            if (fd >= 0) close(fd);
+            return false;
+        }
+        value.id = info.id;
+        if (ioctl(fd, SNDRV_CTL_IOCTL_ELEM_READ, &value) < 0) {
+            st.microphoneError = "Cannot read RK817 capture path";
+            close(fd);
+            return false;
+        }
+        const unsigned int previous = value.value.enumerated.item[0];
+        const unsigned int items = info.value.enumerated.items;
+        for (unsigned int item = 0; item < items; ++item) {
+            info.value.enumerated.item = item;
+            if (ioctl(fd, SNDRV_CTL_IOCTL_ELEM_INFO, &info) < 0) break;
+            if (std::strcmp(info.value.enumerated.name, "Main Mic") != 0) continue;
+            value.value.enumerated.item[0] = item;
+            if (ioctl(fd, SNDRV_CTL_IOCTL_ELEM_WRITE, &value) < 0) break;
+            st.microphoneMixerFd = fd;
+            st.microphoneMixerControl = info.id.numid;
+            st.microphonePreviousPath = previous;
+            SDL_Log("Microphone: RK817 Main Mic enabled (previous path %u)", previous);
+            return true;
+        }
+        st.microphoneError = "Cannot enable RK817 Main Mic";
+        close(fd);
+        return false;
+    }
+#else
+    (void)st;
+#endif
+    return true;
+}
+
+void MicrophoneClose(AppState &st) {
+    if (st.microphoneDevice) SDL_CloseAudioDevice(st.microphoneDevice);
+    MicrophoneRestorePath(st);
+    st.microphoneDevice = 0;
+    st.microphoneModal = false;
+    st.microphoneLevel = 0.0f;
+    st.microphoneSignal = false;
+    st.microphoneError.clear();
+    if (SDL_WasInit(SDL_INIT_AUDIO)) SDL_QuitSubSystem(SDL_INIT_AUDIO);
+}
+
+void MicrophoneOpen(AppState &st) {
+    if (st.microphoneModal) return;
+    st.microphoneModal = true;
+    st.microphoneError.clear();
+    bool rk817 = false;
+    if (!MicrophonePreparePath(st, rk817)) {
+        SDL_Log("Microphone: %s", st.microphoneError.c_str());
+        return;
+    }
+    // Y1 的 PipeWire 默认输入指向扬声器 monitor,直接用 ALSA 的 RK817 录音设备。
+    const char *driverEnv = SDL_getenv("SDL_AUDIODRIVER");
+    const std::string previousDriver = driverEnv ? driverEnv : "";
+    if (rk817) SDL_setenv("SDL_AUDIODRIVER", "alsa", 1);
+    const int audioResult = SDL_InitSubSystem(SDL_INIT_AUDIO);
+    if (rk817) SDL_setenv("SDL_AUDIODRIVER", previousDriver.c_str(), 1);
+    if (audioResult != 0) {
+        st.microphoneError = SDL_GetError();
+        MicrophoneRestorePath(st);
+        SDL_Log("Microphone: %s", st.microphoneError.c_str());
+        return;
+    }
+    const char *deviceName = nullptr;
+    if (rk817) {
+        for (int i = 0; i < SDL_GetNumAudioDevices(SDL_TRUE); ++i) {
+            const char *name = SDL_GetAudioDeviceName(i, SDL_TRUE);
+            if (name && std::strstr(name, "rk817")) { deviceName = name; break; }
+        }
+        if (!deviceName) {
+            st.microphoneError = "RK817 capture device not found";
+            MicrophoneRestorePath(st);
+            SDL_QuitSubSystem(SDL_INIT_AUDIO);
+            SDL_Log("Microphone: %s", st.microphoneError.c_str());
+            return;
+        }
+    }
+    // 队列模式;SDL 按请求转换为单声道 S16,不使用录音线程回调。
+    SDL_AudioSpec wanted{};
+    wanted.freq = 48000;
+    wanted.format = AUDIO_S16SYS;
+    wanted.channels = 1;
+    wanted.samples = 1024;
+    st.microphoneDevice = SDL_OpenAudioDevice(deviceName, SDL_TRUE, &wanted, nullptr, 0);
+    if (!st.microphoneDevice) {
+        st.microphoneError = SDL_GetError();
+        MicrophoneRestorePath(st);
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
+        SDL_Log("Microphone: %s", st.microphoneError.c_str());
+        return;
+    }
+    SDL_Log("Microphone: capture opened using %s / %s", SDL_GetCurrentAudioDriver(),
+            deviceName ? deviceName : "default");
+    st.microphoneLastData = SDL_GetTicks();
+    SDL_PauseAudioDevice(st.microphoneDevice, 0);
+}
+
+void MicrophonePoll(AppState &st) {
+    if (!st.microphoneDevice) return;
+    Sint16 samples[4096];
+    // 每次最多读 85 ms;如果主循环曾暂停,丢弃旧数据,避免堆积和显示延迟。
+    const Uint32 bytes = SDL_DequeueAudio(st.microphoneDevice, samples, sizeof(samples));
+    if (SDL_GetQueuedAudioSize(st.microphoneDevice) > sizeof(samples))
+        SDL_ClearQueuedAudio(st.microphoneDevice);
+    if (bytes == 0) {
+        if (SDL_GetTicks() - st.microphoneLastData > 2000) {
+            st.microphoneLevel = 0.0f;
+            st.microphoneSignal = false;
+        }
+        return;
+    }
+    st.microphoneLastData = SDL_GetTicks();
+    double sum = 0.0;
+    const Uint32 count = bytes / sizeof(Sint16);
+    for (Uint32 i = 0; i < count; ++i) {
+        const double sample = samples[i] / 32768.0;
+        sum += sample * sample;
+    }
+    const float rms = static_cast<float>(std::sqrt(sum / count));
+    st.microphoneSignal = rms > 0.003f;
+    const float level = std::clamp((20.0f * std::log10(std::max(rms, 0.000001f)) + 60.0f) / 60.0f,
+                                   0.0f, 1.0f);
+    // 快速上升、缓慢回落,让短促声音也容易观察。
+    st.microphoneLevel = std::max(level, st.microphoneLevel * 0.85f);
+}
 
 static const char *AxisName(Sint16 axis) {
     switch (axis) {

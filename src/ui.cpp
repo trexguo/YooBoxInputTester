@@ -27,6 +27,49 @@ static std::deque<std::string> cachedMachineLog;
 static bool machineLayerValid = false;
 // 中央日志区关于 x=810 对称,与两侧圆形按键保留间距。
 static constexpr SDL_Rect EVENT_LOG_AREA = {450, 330 + MACHINE_OFFSET_Y, 720, 540};
+static constexpr SDL_Rect RECORD_BUTTON = {1450, 48, 110, 68};
+static constexpr SDL_Rect MICROPHONE_PANEL = {360, 400, 900, 280};
+static constexpr SDL_Rect MICROPHONE_CLOSE = {1172, 420, 64, 64};
+
+bool UIHandleEvent(AppState &state, const SDL_Event &event) {
+    if (state.microphoneModal && event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
+        MicrophoneClose(state);
+        return true;
+    }
+    if (state.microphoneDevice && event.type == SDL_AUDIODEVICEREMOVED &&
+        event.adevice.iscapture && event.adevice.which == state.microphoneDevice) {
+        MicrophoneClose(state);
+        state.microphoneModal = true;
+        state.microphoneError = "Microphone disconnected";
+        return true;
+    }
+    SDL_Point point{};
+    bool pressed = false;
+    if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+        event.button.which != SDL_TOUCH_MOUSEID) {
+        point = {event.button.x, event.button.y};
+        pressed = true;
+    } else if (event.type == SDL_FINGERDOWN &&
+               std::isfinite(event.tfinger.x) && std::isfinite(event.tfinger.y)) {
+        point = {static_cast<int>(event.tfinger.x * WINDOW_W),
+                 static_cast<int>(event.tfinger.y * WINDOW_H)};
+        pressed = true;
+    }
+    if (pressed) {
+        if (state.microphoneModal) {
+            if (SDL_PointInRect(&point, &MICROPHONE_CLOSE)) MicrophoneClose(state);
+            return true;
+        }
+        if (SDL_PointInRect(&point, &RECORD_BUTTON)) {
+            MicrophoneOpen(state);
+            return true;
+        }
+    }
+    // 弹窗期间消费指针事件,避免穿透到底层仪表盘。
+    return state.microphoneModal &&
+           ((event.type >= SDL_MOUSEMOTION && event.type <= SDL_MOUSEWHEEL) ||
+            event.type == SDL_FINGERDOWN || event.type == SDL_FINGERUP || event.type == SDL_FINGERMOTION);
+}
 
 static bool ButtonHeld(SDL_GameController *gc, SDL_GameControllerButton btn) {
     return gc && SDL_GameControllerGetButton(gc, ControllerButtonForDevice(gc, btn)) != 0;
@@ -504,6 +547,62 @@ static void DrawFrontOutline(SDL_Renderer *r, const FontSet &fonts, SDL_GameCont
     DrawLog(r, fonts, state.log);
 }
 
+static void DrawMicrophone(SDL_Renderer *r, const FontSet &fonts, const AppState &state) {
+    DrawButtonBox(r, fonts.hint, "Mic", RECORD_BUTTON, state.microphoneModal);
+    if (!state.microphoneModal) return;
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 175);
+    SDL_RenderFillRect(r, nullptr);
+    // 圆角阴影和轻微外沿光晕,避免矩形发光填充遮住仪表内容。
+    SDL_Rect shadow = {MICROPHONE_PANEL.x - 8, MICROPHONE_PANEL.y + 12,
+                       MICROPHONE_PANEL.w + 16, MICROPHONE_PANEL.h + 8};
+    DrawRoundedRect(r, shadow, 32, (SDL_Color){0, 0, 0, 100}, true);
+    for (int inset = 8; inset >= 2; inset -= 2) {
+        SDL_Rect halo = {MICROPHONE_PANEL.x - inset, MICROPHONE_PANEL.y - inset,
+                         MICROPHONE_PANEL.w + inset * 2, MICROPHONE_PANEL.h + inset * 2};
+        DrawRoundedRect(r, halo, 28 + inset, (SDL_Color){0, 200, 220, 12}, false);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    DrawRoundedRect(r, MICROPHONE_PANEL, 28, (SDL_Color){16, 22, 36, 255}, true);
+    DrawRoundedRect(r, MICROPHONE_PANEL, 28, (SDL_Color){38, 94, 110, 255}, false);
+    DrawCentered(r, fonts.hint, "Microphone Test", C.white,
+                 MICROPHONE_PANEL.x + MICROPHONE_PANEL.w / 2,
+                 MICROPHONE_CLOSE.y + MICROPHONE_CLOSE.h / 2);
+    DrawRoundedRect(r, MICROPHONE_CLOSE, 16, (SDL_Color){26, 36, 52, 255}, true);
+    DrawRoundedRect(r, MICROPHONE_CLOSE, 16, (SDL_Color){52, 80, 94, 255}, false);
+    DrawCentered(r, fonts.hint, "X", C.white,
+                 MICROPHONE_CLOSE.x + MICROPHONE_CLOSE.w / 2,
+                 MICROPHONE_CLOSE.y + MICROPHONE_CLOSE.h / 2);
+
+    const SDL_Rect track = {424, 510, 772, 64};
+    DrawRoundedRect(r, track, 14, (SDL_Color){7, 12, 22, 255}, true);
+    DrawRoundedRect(r, track, 14, (SDL_Color){30, 50, 68, 255}, false);
+    constexpr int segments = 36, segmentWidth = 16, gap = 5;
+    const float activeSegments = std::clamp(state.microphoneLevel, 0.0f, 1.0f) * segments;
+    for (int i = 0; i < segments; ++i) {
+        SDL_Rect segment = {track.x + 10 + i * (segmentWidth + gap), track.y + 10,
+                            segmentWidth, track.h - 20};
+        DrawRoundedRect(r, segment, 4, (SDL_Color){21, 33, 48, 255}, true);
+        const float fraction = std::clamp(activeSegments - i, 0.0f, 1.0f);
+        if (fraction == 0.0f) continue;
+        SDL_Color color = i >= 33 ? C.magenta :
+                          i >= 28 ? C.yellow : (SDL_Color){0, 218, 204, 255};
+        // 最后一段渐亮,保留连续音量反馈而不是仅有整段跳变。
+        color.r = static_cast<Uint8>(21 + (color.r - 21) * fraction);
+        color.g = static_cast<Uint8>(33 + (color.g - 33) * fraction);
+        color.b = static_cast<Uint8>(48 + (color.b - 48) * fraction);
+        DrawRoundedRect(r, segment, 4, color, true);
+    }
+    SDL_SetRenderDrawColor(r, 64, 96, 112, 255);
+    for (int x : {track.x + 10, WINDOW_W / 2, track.x + track.w - 10})
+        SDL_RenderDrawLine(r, x, 584, x, 592);
+    const SDL_Color labelColor = {128, 156, 172, 255};
+    DrawCentered(r, fonts.log, "-60 dBFS", labelColor, 470, 615);
+    DrawCentered(r, fonts.log, "-30 dBFS", labelColor, WINDOW_W / 2, 615);
+    DrawCentered(r, fonts.log, "0 dBFS", labelColor, 1160, 615);
+}
+
 void DrawDashboard(SDL_Renderer *r, const FontSet &fonts, const AppState &state) {
     DrawStatusLine(r, fonts, state.mainController);
     MachineVisualState visual;
@@ -564,6 +663,7 @@ void DrawDashboard(SDL_Renderer *r, const FontSet &fonts, const AppState &state)
                  C.dimCyan, WINDOW_W / 2, WINDOW_H - 64);
     DrawCentered(r, fonts.hint, "Hold +, SELECT and START together to exit.",
                  C.dimCyan, WINDOW_W / 2, WINDOW_H - 24);
+    DrawMicrophone(r, fonts, state);
 }
 
 void UIUnload() {

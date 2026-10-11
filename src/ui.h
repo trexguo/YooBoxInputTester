@@ -37,5 +37,6 @@ void DrawGlowRect(SDL_Renderer *r, SDL_Rect rect, SDL_Color col, int glow);
 struct AppState;
 void DrawDashboard(SDL_Renderer *r, const FontSet &fonts, const AppState &state);
 void UIUnload();
+bool UIHandleEvent(AppState &state, const SDL_Event &event);
 
 #endif // YOOBOX_UI_H

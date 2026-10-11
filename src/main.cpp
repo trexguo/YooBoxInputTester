@@ -39,6 +39,7 @@ int main(int argc, char *argv[]) {
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1,
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!renderer) { SDL_Log("CreateRenderer failed: %s", SDL_GetError()); return 1; }
+    SDL_RenderSetLogicalSize(renderer, WINDOW_W, WINDOW_H);
 
     FontSet fonts;
     if (!FontLoad(fonts)) {
@@ -64,6 +65,7 @@ int main(int argc, char *argv[]) {
             if (event.type == SDL_RENDER_TARGETS_RESET || event.type == SDL_RENDER_DEVICE_RESET)
                 UIUnload(); // 图形设备重置后重新创建缓存,避免复用失效内容。
             if (event.type == SDL_QUIT) running = false;
+            if (UIHandleEvent(state, event)) continue;
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) running = false;
 
             // 手柄热插拔(ADDED/REMOVED 只更新连接状态,不入日志)
@@ -89,6 +91,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
         nextFrame = SDL_GetTicks() + 33;
+        MicrophonePoll(state);
 
         SDL_SetRenderDrawColor(renderer, C.bg.r, C.bg.g, C.bg.b, 255);
         SDL_RenderClear(renderer);
@@ -113,6 +116,7 @@ int main(int argc, char *argv[]) {
         SDL_RenderPresent(renderer);
     }
 
+    MicrophoneClose(state);
     CustomKeysClose(state);
     UIUnload();
     FontUnload(fonts);

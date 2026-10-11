@@ -29,6 +29,15 @@ struct AppState {
     bool pointerVisible = false;
     int pointerX = 0;
     int pointerY = 0;
+    bool microphoneModal = false;
+    SDL_AudioDeviceID microphoneDevice = 0;
+    float microphoneLevel = 0.0f; // RMS 映射到 -60..0 dBFS 的显示范围
+    bool microphoneSignal = false;
+    Uint32 microphoneLastData = 0;
+    std::string microphoneError;
+    int microphoneMixerFd = -1; // Y1 测试期间保留控制设备,关闭时恢复输入路由
+    unsigned int microphoneMixerControl = 0;
+    unsigned int microphonePreviousPath = 0;
 };
 
 // 注册一段输入描述到有限日志(末 8 条,超出丢弃最旧)
@@ -53,5 +62,9 @@ bool CustomKeyHeld(const AppState &st, CustomKey key);
 bool CustomKeyHighlighted(const AppState &st, CustomKey key);
 void CustomKeysPoll(AppState &st);
 void CustomKeysClose(AppState &st);
+
+void MicrophoneOpen(AppState &st);
+void MicrophonePoll(AppState &st);
+void MicrophoneClose(AppState &st);
 
 #endif // YOOBOX_APP_H
