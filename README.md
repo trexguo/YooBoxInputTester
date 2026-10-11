@@ -213,6 +213,41 @@ Fn2 ADC 的运行时适配继续检查设备树 `rockchip,rk3562`；工具链名
 
 ### 部署到目标设备
 
+#### Y1：通过 SSH 更新和启动（已实机验证）
+
+Mac 与掌机连接同一局域网，并在掌机上开启 SSH。当前地址为 `192.168.8.231`，登录用户为 `root`；按提示输入设备的 SSH 密码。若掌机 IP 变化，将下列命令中的地址替换为新地址。
+
+```bash
+# 登录掌机；10 秒连接超时便于发现设备离线或 IP 变化
+ssh -o ConnectTimeout=10 root@192.168.8.231
+```
+
+安装目录为 `/storage/yoobox-input-tester/`。在 Mac 的仓库根目录上传交叉编译产物，先保存为 `.new`，避免覆盖正在运行的二进制。`scp -O` 使用掌机支持的传统 SCP 协议。
+
+```bash
+scp -O -o ConnectTimeout=10 build_cross/YooBoxInputTester \
+  root@192.168.8.231:/storage/yoobox-input-tester/YooBoxInputTester.new
+```
+
+SSH 登录后，在掌机上执行：
+
+```bash
+cd /storage/yoobox-input-tester || exit 1
+chmod +x YooBoxInputTester.new || exit 1
+cp -p YooBoxInputTester YooBoxInputTester.previous || exit 1
+killall YooBoxInputTester 2>/dev/null || true
+mv YooBoxInputTester.new YooBoxInputTester || exit 1
+nohup ./launch.sh >> run.log 2>&1 < /dev/null &
+
+# 检查进程和运行日志
+pidof YooBoxInputTester
+tail -n 20 run.log
+```
+
+已有版本无需上传时，直接运行上述 `nohup ./launch.sh` 命令即可。`launch.sh` 会切换到安装目录，使字体路径正确解析，并设置 `XDG_RUNTIME_DIR=/var/run/0-runtime-dir`、`WAYLAND_DISPLAY=wayland-1`。界面显示在掌机屏幕上，无需 SSH X11 转发。退出使用 `+`、`SELECT`、`START` 组合键。
+
+#### 其他环境的传输方式
+
 ```bash
 # 方法1: 使用 scp 传输
 scp YooBoxInputTester user@device:/home/user/

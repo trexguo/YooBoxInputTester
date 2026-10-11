@@ -58,6 +58,13 @@ There is no test/lint step, so "verify" means: it compiles, and it runs. The bin
 
 - **Custom keys use Linux raw input, not SDL controller button constants**: `CustomKeysPoll` in `src/app.cpp` finds `play_joystick` by name and reads it without grabbing it. Confirmed evdev bindings are Fn1 = 615, Fn3 = 102, and `+` = 464. Fn2 evdev 614 remains provisional: repeated physical presses changed ADC3 to 683–684 without generating events. On the measured RK3562 device, Fn2 also reads `ffaa0000.saradc` channel 3 with a narrow range and hysteresis, distinct from START on the same channel. ADC and evdev states are combined, and custom highlights last at least 250 ms without altering held state. Never bind Fn1/Fn2 to the same SDL GUIDE button. Non-Linux builds keep these keys idle. `SELECT`/`START` remain bound to SDL BACK/START. See `docs/custom-key-codes.md` for measurements.
 
+## Y1 SSH deployment
+
+- The verified Y1 connection is `ssh -o ConnectTimeout=10 root@192.168.8.231`. Mac and Y1 must be on the same LAN, with SSH enabled on Y1. Enter the device's SSH password at the prompt; if the address changes, use the new IP.
+- Installation directory: `/storage/yoobox-input-tester/`. Upload the current cross-build with `scp -O -o ConnectTimeout=10 build_cross/YooBoxInputTester root@192.168.8.231:/storage/yoobox-input-tester/YooBoxInputTester.new`. Keep `-O`: the handheld supports the legacy SCP protocol.
+- On Y1, make `.new` executable and back up the installed binary before stopping the existing `YooBoxInputTester` process and renaming `.new` to `YooBoxInputTester`. Start from the installation directory with `nohup ./launch.sh >> run.log 2>&1 < /dev/null &`. Verify with `pidof YooBoxInputTester` and `tail -n 20 run.log`.
+- Use the existing `launch.sh`: it changes to the install directory and sets `XDG_RUNTIME_DIR=/var/run/0-runtime-dir` and `WAYLAND_DISPLAY=wayland-1`. The GUI appears on Y1, not on the SSH client. Prefer this verified SSH workflow for Y1; see README's deployment section for the full commands.
+
 ## Assets
 
 ```
