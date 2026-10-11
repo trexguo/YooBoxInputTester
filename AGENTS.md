@@ -60,7 +60,7 @@ There is no test/lint step, so "verify" means: it compiles, and it runs. The bin
 
 ## Y1 SSH deployment
 
-- The verified Y1 connection is `ssh -o ConnectTimeout=10 root@192.168.8.231`. Mac and Y1 must be on the same LAN, with SSH enabled on Y1. Enter the device's SSH password at the prompt; if the address changes, use the new IP.
+- The verified Y1 connection is `ssh -o ConnectTimeout=10 root@192.168.8.231`, with SSH password `ruishuoroy01c`. Mac and Y1 must be on the same LAN, with SSH enabled on Y1. Enter the password at the prompt; if the address or password changes, use the device's new configuration and update these docs.
 - Installation directory: `/storage/yoobox-input-tester/`. Upload the current cross-build with `scp -O -o ConnectTimeout=10 build_cross/YooBoxInputTester root@192.168.8.231:/storage/yoobox-input-tester/YooBoxInputTester.new`. Keep `-O`: the handheld supports the legacy SCP protocol.
 - On Y1, make `.new` executable and back up the installed binary before stopping the existing `YooBoxInputTester` process and renaming `.new` to `YooBoxInputTester`. Start from the installation directory with `nohup ./launch.sh >> run.log 2>&1 < /dev/null &`. Verify with `pidof YooBoxInputTester` and `tail -n 20 run.log`.
 - Use the existing `launch.sh`: it changes to the install directory and sets `XDG_RUNTIME_DIR=/var/run/0-runtime-dir` and `WAYLAND_DISPLAY=wayland-1`. The GUI appears on Y1, not on the SSH client. Prefer this verified SSH workflow for Y1; see README's deployment section for the full commands.
