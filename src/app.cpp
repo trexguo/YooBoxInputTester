@@ -49,7 +49,48 @@ static const char *ButtonName(Uint8 button) {
     }
 }
 
-void AppLog(AppState &st, const std::string &s) {
+static const char *AxisEnumName(Uint8 axis) {
+    switch (axis) {
+        case SDL_CONTROLLER_AXIS_LEFTX: return "SDL_CONTROLLER_AXIS_LEFTX";
+        case SDL_CONTROLLER_AXIS_LEFTY: return "SDL_CONTROLLER_AXIS_LEFTY";
+        case SDL_CONTROLLER_AXIS_RIGHTX: return "SDL_CONTROLLER_AXIS_RIGHTX";
+        case SDL_CONTROLLER_AXIS_RIGHTY: return "SDL_CONTROLLER_AXIS_RIGHTY";
+        case SDL_CONTROLLER_AXIS_TRIGGERLEFT: return "SDL_CONTROLLER_AXIS_TRIGGERLEFT";
+        case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: return "SDL_CONTROLLER_AXIS_TRIGGERRIGHT";
+        default: return "SDL_CONTROLLER_AXIS_UNKNOWN";
+    }
+}
+
+static std::string ButtonEnumName(Uint8 button) {
+    switch (button) {
+        case SDL_CONTROLLER_BUTTON_A: return "SDL_CONTROLLER_BUTTON_A";
+        case SDL_CONTROLLER_BUTTON_B: return "SDL_CONTROLLER_BUTTON_B";
+        case SDL_CONTROLLER_BUTTON_X: return "SDL_CONTROLLER_BUTTON_X";
+        case SDL_CONTROLLER_BUTTON_Y: return "SDL_CONTROLLER_BUTTON_Y";
+        case SDL_CONTROLLER_BUTTON_BACK: return "SDL_CONTROLLER_BUTTON_BACK";
+        case SDL_CONTROLLER_BUTTON_GUIDE: return "SDL_CONTROLLER_BUTTON_GUIDE";
+        case SDL_CONTROLLER_BUTTON_START: return "SDL_CONTROLLER_BUTTON_START";
+        case SDL_CONTROLLER_BUTTON_LEFTSTICK: return "SDL_CONTROLLER_BUTTON_LEFTSTICK";
+        case SDL_CONTROLLER_BUTTON_RIGHTSTICK: return "SDL_CONTROLLER_BUTTON_RIGHTSTICK";
+        case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: return "SDL_CONTROLLER_BUTTON_LEFTSHOULDER";
+        case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return "SDL_CONTROLLER_BUTTON_RIGHTSHOULDER";
+        case SDL_CONTROLLER_BUTTON_DPAD_UP: return "SDL_CONTROLLER_BUTTON_DPAD_UP";
+        case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return "SDL_CONTROLLER_BUTTON_DPAD_DOWN";
+        case SDL_CONTROLLER_BUTTON_DPAD_LEFT: return "SDL_CONTROLLER_BUTTON_DPAD_LEFT";
+        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return "SDL_CONTROLLER_BUTTON_DPAD_RIGHT";
+        default: {
+            const char *name = SDL_GameControllerGetStringForButton(
+                static_cast<SDL_GameControllerButton>(button));
+            if (!name) return "SDL_CONTROLLER_BUTTON_UNKNOWN";
+            std::string result = "SDL_CONTROLLER_BUTTON_";
+            for (; *name; ++name) result += (*name >= 'a' && *name <= 'z') ? *name - 'a' + 'A' : *name;
+            return result;
+        }
+    }
+}
+
+void AppLog(AppState &st, const std::string &s, const std::string &sdlDetails) {
+    st.currentLog = sdlDetails.empty() ? s : s + " | " + sdlDetails;
     st.log.push_back(s);
     while (st.log.size() > LOG_MAX)
         st.log.pop_front();
@@ -92,8 +133,8 @@ SDL_GameControllerButton ControllerButtonForDevice(SDL_GameController *gc, SDL_G
     SDL_Joystick *joystick = SDL_GameControllerGetJoystick(gc);
     const char *name = joystick ? SDL_JoystickName(joystick) : nullptr;
     if (!name || std::string(name) != "play_joystick") return button;
-    if (button == SDL_CONTROLLER_BUTTON_X) return SDL_CONTROLLER_BUTTON_Y;
-    if (button == SDL_CONTROLLER_BUTTON_Y) return SDL_CONTROLLER_BUTTON_X;
+    if (button == SDL_CONTROLLER_BUTTON_A) return SDL_CONTROLLER_BUTTON_B;
+    if (button == SDL_CONTROLLER_BUTTON_B) return SDL_CONTROLLER_BUTTON_A;
     return button;
 }
 
@@ -128,13 +169,11 @@ std::string KeyName(SDL_Event &e, bool suppressMouse) {
             return std::string("Mouse MOVE (") + std::to_string(e.motion.x) + ", " + std::to_string(e.motion.y) + ")";
         case SDL_CONTROLLERBUTTONDOWN:
         case SDL_CONTROLLERBUTTONUP: {
-            SDL_GameController *gc = SDL_GameControllerFromInstanceID(e.cbutton.which);
-            const auto button = ControllerButtonForDevice(gc,
-                static_cast<SDL_GameControllerButton>(e.cbutton.button));
-            const char *n = ButtonName(static_cast<Uint8>(button));
+            // EventLog reports the original SDL event, without the UI's device mapping.
+            const char *n = ButtonName(e.cbutton.button);
             char buf[96];
             std::snprintf(buf, sizeof(buf), "%s [%s]",
-                          n ? n : SDL_GameControllerNameForIndex(e.cdevice.which),
+                          n ? n : "unknown",
                           e.type == SDL_CONTROLLERBUTTONUP ? "UP" : "DOWN");
             return "Btn " + std::string(buf);
         }
@@ -148,11 +187,60 @@ std::string KeyName(SDL_Event &e, bool suppressMouse) {
     }
 }
 
+// SDL 详情始终取原始事件值,只展示在机身下方的当前日志中。
+std::string SDLEventDetails(const SDL_Event &e) {
+    switch (e.type) {
+        case SDL_CONTROLLERBUTTONDOWN:
+        case SDL_CONTROLLERBUTTONUP:
+            return ButtonEnumName(e.cbutton.button) + "=" + std::to_string(e.cbutton.button);
+        case SDL_CONTROLLERAXISMOTION:
+            return std::string(AxisEnumName(e.caxis.axis)) + "=" + std::to_string(e.caxis.axis);
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:
+            return "SDL key=" + std::to_string(e.key.keysym.sym);
+        default:
+            return "";
+    }
+}
+
+static SDL_GameController *OpenController(int index) {
+    SDL_GameController *controller = SDL_GameControllerOpen(index);
+#ifdef __linux__
+    SDL_Joystick *joystick = controller ? SDL_GameControllerGetJoystick(controller) : nullptr;
+    const char *name = joystick ? SDL_JoystickName(joystick) : nullptr;
+    if (name && std::string(name) == "play_joystick") {
+        char *mappingText = SDL_GameControllerMapping(controller);
+        if (mappingText) {
+            std::string mapping(mappingText);
+            SDL_free(mappingText);
+            // Y1:数字扳机为 b6/b7,加号 KEY_FN 为 b13,对应 SDL GUIDE。
+            for (const auto &binding : {std::make_pair("lefttrigger:", "lefttrigger:b6"),
+                                       std::make_pair("righttrigger:", "righttrigger:b7"),
+                                       std::make_pair("guide:", "guide:b13")}) {
+                const auto start = mapping.find(binding.first);
+                if (start != std::string::npos) {
+                    const auto end = mapping.find(',', start);
+                    mapping.replace(start, end == std::string::npos ? mapping.size() - start : end - start,
+                                    binding.second);
+                } else {
+                    if (!mapping.empty() && mapping.back() != ',') mapping += ',';
+                    mapping += binding.second;
+                    mapping += ',';
+                }
+            }
+            if (SDL_GameControllerAddMapping(mapping.c_str()) < 0)
+                SDL_Log("Y1 controller mapping failed: %s", SDL_GetError());
+        }
+    }
+#endif
+    return controller;
+}
+
 void ControllersOpenAll(AppState &st) {
     st.mainController = nullptr;
     for (int i = 0; i < SDL_NumJoysticks(); i++) {
         if (!SDL_IsGameController(i)) continue;
-        SDL_GameController *c = SDL_GameControllerOpen(i);
+        SDL_GameController *c = OpenController(i);
         if (!st.mainController) st.mainController = c;
     }
 }
@@ -160,7 +248,7 @@ void ControllersOpenAll(AppState &st) {
 bool ControllersHandleEvent(AppState &st, SDL_Event &e) {
     switch (e.type) {
         case SDL_CONTROLLERDEVICEADDED: {
-            SDL_GameController *c = SDL_GameControllerOpen(e.cdevice.which);
+            SDL_GameController *c = OpenController(e.cdevice.which);
             if (c && !st.mainController) st.mainController = c;
             return true;
         }
@@ -223,7 +311,8 @@ void SetCustomKey(AppState &st, const CustomBinding &binding, bool held, bool lo
         Uint32 until = SDL_GetTicks() + 250;
         st.customKeyHighlightUntil[static_cast<std::size_t>(binding.key)] = until ? until : 1;
     }
-    if (log) {
+    // 加号由 SDL GUIDE 事件入日志;evdev 仍负责 held 状态和短按高亮。
+    if (log && binding.key != CustomKey::Plus) {
         char text[80];
         if (source)
             std::snprintf(text, sizeof(text), "Btn %s [%s] (%s)",

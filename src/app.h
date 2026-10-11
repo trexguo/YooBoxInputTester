@@ -16,6 +16,7 @@ static const int WINDOW_H = 1080;
 // 仪表盘只由一个"主"控制器驱动,但保留 open-all 多设备逻辑。
 struct AppState {
     SDL_GameController *mainController = nullptr; // 驱动仪表盘的那个
+    std::string currentLog;                      // 当前日志及原始 SDL 详情
     std::deque<std::string> log;                  // 末 8 条事件
     std::array<bool, static_cast<std::size_t>(CustomKey::Count)> customKeys{};
     std::array<Uint32, static_cast<std::size_t>(CustomKey::Count)> customKeyHighlightUntil{};
@@ -31,13 +32,14 @@ struct AppState {
 };
 
 // 注册一段输入描述到有限日志(末 8 条,超出丢弃最旧)
-void AppLog(AppState &st, const std::string &s);
+void AppLog(AppState &st, const std::string &s, const std::string &sdlDetails = "");
 
 // 把 SDL_Event 转成一段可读文本;没有匹配的输入类型返回空串
 std::string KeyName(SDL_Event &e, bool suppressMouse = false);
+std::string SDLEventDetails(const SDL_Event &e);
 void PointerHandleEvent(AppState &st, const SDL_Event &e);
 bool ExitComboHeld(const AppState &st, bool selectHeld, bool startHeld);
-// play_joystick 的 X/Y 对调;交换是对称的,可用于状态读取和事件命名。
+// play_joystick 的 A/B 对调;交换是对称的,可用于状态读取和事件命名。
 SDL_GameControllerButton ControllerButtonForDevice(SDL_GameController *gc, SDL_GameControllerButton button);
 
 // 打开所有已连接手柄,并把第一个设为主控;已打开的保留

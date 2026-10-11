@@ -53,10 +53,16 @@ int main(int argc, char *argv[]) {
     CustomKeysPoll(state); // 首批事件前识别 play_joystick,避免触摸与模拟鼠标重复入日志。
 
     bool running = true;
+    // 可选诊断截图:直接导出应用渲染画面,不依赖合成器截图协议。
+    const char *screenshotPath = SDL_getenv("YOOBOX_SCREENSHOT");
+    bool screenshotSaved = false;
     SDL_Event event;
+    Uint32 nextFrame = 0;
 
     while (running) {
         while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_RENDER_TARGETS_RESET || event.type == SDL_RENDER_DEVICE_RESET)
+                UIUnload(); // 图形设备重置后重新创建缓存,避免复用失效内容。
             if (event.type == SDL_QUIT) running = false;
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) running = false;
 
@@ -66,7 +72,7 @@ int main(int argc, char *argv[]) {
             // 手柄按钮/轴、键盘、触摸、鼠标事件 → 事件日志
             std::string name = KeyName(event, state.customInputFd >= 0);
             if (!name.empty())
-                AppLog(state, name);
+                AppLog(state, name, SDLEventDetails(event));
         }
 
         CustomKeysPoll(state);
@@ -77,6 +83,12 @@ int main(int argc, char *argv[]) {
             running = false;
         }
         if (!running) break;
+        // 输入继续轮询,显示最多 30 FPS;避免无输入时反复全屏绘制。
+        if (!SDL_TICKS_PASSED(SDL_GetTicks(), nextFrame)) {
+            SDL_Delay(8);
+            continue;
+        }
+        nextFrame = SDL_GetTicks() + 33;
 
         SDL_SetRenderDrawColor(renderer, C.bg.r, C.bg.g, C.bg.b, 255);
         SDL_RenderClear(renderer);
@@ -84,10 +96,25 @@ int main(int argc, char *argv[]) {
 
         DrawDashboard(renderer, fonts, state);
 
+        if (screenshotPath && !screenshotSaved) {
+            int width = 0, height = 0;
+            SDL_GetRendererOutputSize(renderer, &width, &height);
+            SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(
+                0, width, height, 32, SDL_PIXELFORMAT_ARGB8888);
+            if (surface) {
+                if (SDL_RenderReadPixels(renderer, nullptr, surface->format->format,
+                                         surface->pixels, surface->pitch) == 0)
+                    SDL_SaveBMP(surface, screenshotPath);
+                SDL_FreeSurface(surface);
+            }
+            screenshotSaved = true;
+        }
+
         SDL_RenderPresent(renderer);
     }
 
     CustomKeysClose(state);
+    UIUnload();
     FontUnload(fonts);
     SDL_StopTextInput();
     SDL_DestroyRenderer(renderer);

@@ -4,14 +4,16 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
-// 三个预加载字号:标题 / 按键标签 / 提示与日志
+// 预加载字号:标题 / 按键标签 / 提示 / 当前日志 / EventLog
 struct FontSet {
     TTF_Font *title = nullptr;   // 72 px
     TTF_Font *key   = nullptr;   // 52 px
     TTF_Font *hint  = nullptr;   // 32 px
+    TTF_Font *log   = nullptr;   // 22 px
+    TTF_Font *eventLog = nullptr; // 26 px
 };
 
-// 加载 res/fonts/font.ttf 的三个字号;任一失败返回 false
+// 加载 res/fonts/font.ttf 的五个字号;任一失败返回 false
 bool FontLoad(FontSet &fonts);
 void FontUnload(FontSet &fonts);
 

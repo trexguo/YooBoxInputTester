@@ -6,13 +6,17 @@ bool FontLoad(FontSet &fonts) {
     fonts.title = TTF_OpenFont(FONT_PATH, 72);
     fonts.key   = TTF_OpenFont(FONT_PATH, 52);
     fonts.hint  = TTF_OpenFont(FONT_PATH, 32);
-    return fonts.title && fonts.key && fonts.hint;
+    fonts.log   = TTF_OpenFont(FONT_PATH, 22);
+    fonts.eventLog = TTF_OpenFont(FONT_PATH, 26);
+    return fonts.title && fonts.key && fonts.hint && fonts.log && fonts.eventLog;
 }
 
 void FontUnload(FontSet &fonts) {
     if (fonts.title) TTF_CloseFont(fonts.title);
     if (fonts.key)   TTF_CloseFont(fonts.key);
     if (fonts.hint)  TTF_CloseFont(fonts.hint);
+    if (fonts.log)   TTF_CloseFont(fonts.log);
+    if (fonts.eventLog) TTF_CloseFont(fonts.eventLog);
     fonts = FontSet{};
 }
 
