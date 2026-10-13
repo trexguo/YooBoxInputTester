@@ -23,9 +23,6 @@ struct AppState {
     int customInputFd = -1;
     bool customInputDropped = false;
     Uint32 customInputNextScan = 0;
-    int fn2AdcFd = -1;
-    bool fn2AdcHeld = false;
-    bool fn2EvdevHeld = false;
     bool pointerVisible = false;
     int pointerX = 0;
     int pointerY = 0;

@@ -343,7 +343,17 @@ std::string KeyName(SDL_Event &e, bool suppressMouse) {
             std::snprintf(buf, sizeof(buf), "%s [%s]",
                           n ? n : "unknown",
                           e.type == SDL_CONTROLLERBUTTONUP ? "UP" : "DOWN");
-            return "Btn " + std::string(buf);
+            std::string result = "Btn " + std::string(buf);
+#ifdef __linux__
+            if (e.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE) {
+                SDL_GameController *controller = SDL_GameControllerFromInstanceID(e.cbutton.which);
+                SDL_Joystick *joystick = controller ? SDL_GameControllerGetJoystick(controller) : nullptr;
+                const char *deviceName = joystick ? SDL_JoystickName(joystick) : nullptr;
+                if (deviceName && std::strcmp(deviceName, "play_joystick") == 0)
+                    result += " (evdev " + std::to_string(KEY_FN) + ")";
+            }
+#endif
+            return result;
         }
         case SDL_CONTROLLERAXISMOTION: {
             char buf[96];
@@ -381,10 +391,8 @@ static SDL_GameController *OpenController(int index) {
         if (mappingText) {
             std::string mapping(mappingText);
             SDL_free(mappingText);
-            // Y1:数字扳机为 b6/b7,加号 KEY_FN 为 b13,对应 SDL GUIDE。
-            for (const auto &binding : {std::make_pair("lefttrigger:", "lefttrigger:b6"),
-                                       std::make_pair("righttrigger:", "righttrigger:b7"),
-                                       std::make_pair("guide:", "guide:b13")}) {
+            // Y1:加号 KEY_FN 为 b13,对应 SDL GUIDE;扳机沿用 SDL 的设备映射。
+            for (const auto &binding : {std::make_pair("guide:", "guide:b13")}) {
                 const auto start = mapping.find(binding.first);
                 if (start != std::string::npos) {
                     const auto end = mapping.find(',', start);
@@ -449,12 +457,9 @@ bool CustomKeyHighlighted(const AppState &st, CustomKey key) {
 void CustomKeysClose(AppState &st) {
 #ifdef __linux__
     if (st.customInputFd >= 0) close(st.customInputFd);
-    if (st.fn2AdcFd >= 0) close(st.fn2AdcFd);
 #endif
     st.customInputFd = -1;
     st.customInputDropped = false;
-    st.fn2AdcFd = -1;
-    st.fn2AdcHeld = st.fn2EvdevHeld = false;
     st.customKeys.fill(false);
     st.customKeyHighlightUntil.fill(0);
 }
@@ -464,13 +469,12 @@ namespace {
 struct CustomBinding { CustomKey key; unsigned short code; const char *name; };
 const CustomBinding customBindings[] = {
     {CustomKey::Fn1, 615, "Fn1"}, // KEY_RIGHT_DOWN:设备实测
-    {CustomKey::Fn2, 614, "Fn2"}, // KEY_RIGHT_UP:暂定映射,本机可靠输入来自 ADC3
+    {CustomKey::Fn2, 614, "Fn2"}, // KEY_RIGHT_UP:新版固件实测确认
     {CustomKey::Fn3, KEY_HOME, "Fn3"},
     {CustomKey::Plus, KEY_FN, "+"},
 };
 
-void SetCustomKey(AppState &st, const CustomBinding &binding, bool held, bool log,
-                  const char *source = nullptr) {
+void SetCustomKey(AppState &st, const CustomBinding &binding, bool held, bool log) {
     auto &current = st.customKeys[static_cast<std::size_t>(binding.key)];
     if (current == held) return; // 不重复记录自动连发
     current = held;
@@ -482,12 +486,8 @@ void SetCustomKey(AppState &st, const CustomBinding &binding, bool held, bool lo
     // 加号由 SDL GUIDE 事件入日志;evdev 仍负责 held 状态和短按高亮。
     if (log && binding.key != CustomKey::Plus) {
         char text[80];
-        if (source)
-            std::snprintf(text, sizeof(text), "Btn %s [%s] (%s)",
-                          binding.name, held ? "DOWN" : "UP", source);
-        else
-            std::snprintf(text, sizeof(text), "Btn %s [%s] (evdev %u)",
-                          binding.name, held ? "DOWN" : "UP", binding.code);
+        std::snprintf(text, sizeof(text), "Btn %s [%s] (evdev %u)",
+                      binding.name, held ? "DOWN" : "UP", binding.code);
         AppLog(st, text);
         SDL_Log("%s", text);
     }
@@ -498,69 +498,9 @@ bool SyncCustomKeys(AppState &st, bool log) {
     if (ioctl(st.customInputFd, EVIOCGKEY(sizeof(held)), held) < 0) return false;
     for (const auto &binding : customBindings) {
         bool down = (held[binding.code / 8] & (1u << (binding.code % 8))) != 0;
-        if (binding.key == CustomKey::Fn2) {
-            st.fn2EvdevHeld = down;
-            down = down || st.fn2AdcHeld;
-        }
         SetCustomKey(st, binding, down, log);
     }
     return true;
-}
-
-// 本机实测 Fn2:ffaa0000.saradc 通道3,松开约1023,按下683–684。
-// START 同通道使用较低电平,因此仅识别 Fn2 的窄范围并加回滞。
-bool Fn2AdcPressed(int value, bool held) {
-    return held ? value >= 620 && value <= 750 : value >= 650 && value <= 720;
-}
-
-void OpenFn2Adc(AppState &st) {
-    char compatible[128] = {};
-    int fd = open("/sys/firmware/devicetree/base/compatible", O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return;
-    const ssize_t count = read(fd, compatible, sizeof(compatible));
-    close(fd);
-    bool target = false;
-    for (ssize_t i = 0; i < count; ++i)
-        if ((i == 0 || compatible[i - 1] == '\0') &&
-            count - i >= 16 && std::memcmp(compatible + i, "rockchip,rk3562", 15) == 0)
-            target = true;
-    if (!target) return;
-    DIR *dir = opendir("/sys/bus/iio/devices");
-    if (!dir) return;
-    while (auto *entry = readdir(dir)) {
-        if (std::strncmp(entry->d_name, "iio:device", 10) != 0) continue;
-        const std::string base = std::string("/sys/bus/iio/devices/") + entry->d_name;
-        fd = open((base + "/name").c_str(), O_RDONLY | O_CLOEXEC);
-        if (fd < 0) continue;
-        char name[64] = {};
-        const ssize_t size = read(fd, name, sizeof(name) - 1);
-        close(fd);
-        if (size <= 0 || std::strcmp(name, "ffaa0000.saradc\n") != 0) continue;
-        st.fn2AdcFd = open((base + "/in_voltage3_raw").c_str(), O_RDONLY | O_CLOEXEC);
-        if (st.fn2AdcFd >= 0) {
-            SDL_Log("Fn2: monitoring %s ADC3 (measured range 650-720)", name);
-            break;
-        }
-    }
-    closedir(dir);
-}
-
-void PollFn2Adc(AppState &st) {
-    if (st.fn2AdcFd < 0) return;
-    char raw[32] = {};
-    const ssize_t size = pread(st.fn2AdcFd, raw, sizeof(raw) - 1, 0);
-    if (size < 0 && errno == EINTR) return;
-    char *end = nullptr;
-    const long value = size > 0 ? std::strtol(raw, &end, 10) : -1;
-    const bool valid = size > 0 && end != raw && (*end == '\n' || *end == '\0') &&
-                       value >= 0 && value <= 1023;
-    st.fn2AdcHeld = valid && Fn2AdcPressed(static_cast<int>(value), st.fn2AdcHeld);
-    SetCustomKey(st, customBindings[1], st.fn2AdcHeld || st.fn2EvdevHeld, true, "ADC3");
-    if (!valid) {
-        close(st.fn2AdcFd);
-        st.fn2AdcFd = -1;
-        SDL_Log("Fn2: ADC3 read failed; disabled ADC monitoring");
-    }
 }
 
 void OpenCustomKeys(AppState &st) {
@@ -576,7 +516,6 @@ void OpenCustomKeys(AppState &st) {
             std::strcmp(name, "play_joystick") == 0) {
             st.customInputFd = fd;
             SyncCustomKeys(st, false);
-            OpenFn2Adc(st);
             SDL_Log("Custom keys: monitoring %s (%s)", name, path.c_str());
             break;
         }
@@ -596,7 +535,6 @@ void CustomKeysPoll(AppState &st) {
         OpenCustomKeys(st);
         if (st.customInputFd < 0) return;
     }
-    PollFn2Adc(st);
     input_event events[32];
     // 限制单帧读取量,避免摇杆持续上报时阻塞渲染。
     for (int batch = 0; batch < 32; ++batch) {
@@ -628,10 +566,6 @@ void CustomKeysPoll(AppState &st) {
             for (const auto &binding : customBindings) {
                 if (event.code != binding.code) continue;
                 bool down = event.value != 0;
-                if (binding.key == CustomKey::Fn2) {
-                    st.fn2EvdevHeld = down;
-                    down = down || st.fn2AdcHeld;
-                }
                 SetCustomKey(st, binding, down, true);
             }
         }

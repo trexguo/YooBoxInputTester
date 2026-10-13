@@ -209,24 +209,24 @@ file build_cross/YooBoxInputTester
 
 使用 ARMv8-A / Cortex-A53 编译选项。交叉构建跳过主机的 pkg-config，依赖直接来自工具链 sysroot。链接所用 SDL2、SDL2_ttf、glibc 等库必须与掌机固件兼容；新工具链若引入掌机不存在的 `GLIBC_*` 符号，应使用与设备固件匹配的 sysroot / 运行库重新构建。
 
-Fn2 ADC 的运行时适配继续检查设备树 `rockchip,rk3562`；工具链名称不影响该硬件检查。
+Fn2 已在新版固件上实测确认通过 `play_joystick` 上报 evdev 键码 614（`KEY_RIGHT_UP`），程序直接读取该事件，不再使用 ADC 补充逻辑。
 
 ### 部署到目标设备
 
 #### Y1：通过 SSH 更新和启动（已实机验证）
 
-Mac 与掌机连接同一局域网，并在掌机上开启 SSH。当前地址为 `192.168.8.231`，登录用户为 `root`，SSH 密码为 `ruishuoroy01c`；连接时按提示输入。若掌机 IP 或密码变化，使用设备的新配置并更新本文档。
+Mac 与掌机连接同一局域网，并在掌机上开启 SSH。当前地址为 `10.17.0.234`，登录用户为 `root`，SSH 密码为 `ruishuoroy01c`；连接时按提示输入。若掌机 IP 或密码变化，使用设备的新配置并更新本文档。
 
 ```bash
 # 登录掌机；10 秒连接超时便于发现设备离线或 IP 变化
-ssh -o ConnectTimeout=10 root@192.168.8.231
+ssh -o ConnectTimeout=10 root@10.17.0.234
 ```
 
 安装目录为 `/storage/yoobox-input-tester/`。在 Mac 的仓库根目录上传交叉编译产物，先保存为 `.new`，避免覆盖正在运行的二进制。`scp -O` 使用掌机支持的传统 SCP 协议。
 
 ```bash
 scp -O -o ConnectTimeout=10 build_cross/YooBoxInputTester \
-  root@192.168.8.231:/storage/yoobox-input-tester/YooBoxInputTester.new
+  root@10.17.0.234:/storage/yoobox-input-tester/YooBoxInputTester.new
 ```
 
 SSH 登录后，在掌机上执行：
